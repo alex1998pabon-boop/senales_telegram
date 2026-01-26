@@ -35,20 +35,35 @@ client = None
 def parse_signal(text: str) -> Dict:
     """Extrae información de la señal del mensaje"""
     try:
-        # Buscar par (EURGBP-OTC, EURUSD, etc)
-        pair_match = re.search(r'([A-Z]{6}(?:-OTC)?)', text)
+        # Buscar par con múltiples patrones
+        # Patrón 1: USDJPY-OTC, EURGBP-OTC
+        pair_match = re.search(r'[•\-\*]\s*([A-Z]{6,7}(?:-OTC)?)', text)
+        if not pair_match:
+            # Patrón 2: Solo el par sin prefijo
+            pair_match = re.search(r'\b([A-Z]{6,7})(?:-OTC)?\b', text)
+        
         pair = pair_match.group(1) if pair_match else "UNKNOWN"
         
-        # Buscar dirección (CALL o PUT)
-        direction = "CALL" if "CALL" in text.upper() or "🟩" in text else "PUT" if "PUT" in text.upper() or "🟥" in text else "UNKNOWN"
+        # Buscar dirección con múltiples indicadores
+        text_upper = text.upper()
+        if "CALL" in text_upper or "🟩" in text or "⬆️" in text or "UP" in text_upper:
+            direction = "CALL"
+        elif "PUT" in text_upper or "🟥" in text or "⬇️" in text or "DOWN" in text_upper:
+            direction = "PUT"
+        else:
+            direction = "UNKNOWN"
         
-        # Buscar hora (formato HH:MM)
+        # Buscar hora (formato HH:MM con posible guión)
         time_match = re.search(r'(\d{1,2}:\d{2})', text)
         time = time_match.group(1) if time_match else "N/A"
         
-        # Buscar caducidad
-        expiry_match = re.search(r'(\d+)\s*minutos?', text, re.IGNORECASE)
-        expiry = f"{expiry_match.group(1)}m" if expiry_match else "5m"
+        # Buscar caducidad con múltiples formatos
+        expiry_match = re.search(r'(\d+)\s*minutos?|M(\d+)', text, re.IGNORECASE)
+        if expiry_match:
+            expiry_value = expiry_match.group(1) or expiry_match.group(2)
+            expiry = f"{expiry_value}m"
+        else:
+            expiry = "5m"  # Default
         
         return {
             "pair": pair,
@@ -90,16 +105,30 @@ async def start_telegram_client():
         """Maneja nuevos mensajes del grupo"""
         message_text = event.message.message
         
-        # Filtrar solo mensajes que parezcan señales
-        if any(keyword in message_text.upper() for keyword in ["CALL", "PUT", "OTC", "🟩", "🟥"]):
+        # Filtrar mensajes que contengan señales con patrones flexibles
+        signal_indicators = [
+            "CALL", "PUT", "OTC", "🟩", "🟥", 
+            "SEÑALE", "SEÑAL", "SIGNAL",
+            "-", "•", "minutos", "M5", "M1", "M15"
+        ]
+        
+        # Verificar si el mensaje contiene al menos 2 indicadores
+        matches = sum(1 for indicator in signal_indicators if indicator in message_text.upper())
+        
+        if matches >= 2:
             signal = parse_signal(message_text)
-            signals_storage.insert(0, signal)
             
-            # Mantener solo las últimas señales
-            if len(signals_storage) > MAX_SIGNALS:
-                signals_storage.pop()
-            
-            print(f"📊 Nueva señal: {signal['pair']} {signal['direction']} @ {signal['time']}")
+            # Solo agregar si se detectó par y dirección válidos
+            if signal["pair"] != "UNKNOWN" and signal["direction"] != "UNKNOWN":
+                signals_storage.insert(0, signal)
+                
+                # Mantener solo las últimas señales
+                if len(signals_storage) > MAX_SIGNALS:
+                    signals_storage.pop()
+                
+                print(f"📊 Nueva señal: {signal['pair']} {signal['direction']} @ {signal['time']}")
+            else:
+                print(f"⚠️ Mensaje detectado pero sin datos válidos: {message_text[:50]}...")
     
     print("👂 Escuchando mensajes...")
     await client.run_until_disconnected()
