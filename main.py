@@ -12,7 +12,7 @@ import uvicorn
 # Configuración
 API_ID = os.getenv("TELEGRAM_API_ID")
 API_HASH = os.getenv("TELEGRAM_API_HASH")
-TARGET_GROUP = os.getenv("TARGET_GROUP", "📊 Alejandro Fintch | Señales Gratis 🚀")
+TARGET_GROUP = os.getenv("TARGET_GROUP", "https://t.me/alejandrosinalesgratis")
 
 # Almacenamiento en memoria
 signals_storage: List[Dict] = []
